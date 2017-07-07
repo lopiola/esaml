@@ -21,38 +21,46 @@
 -export([convert_fingerprints/1]).
 -export([unique_id/0]).
 
+-type fp_hash_type() :: sha | md5 | sha256 | sha384 | sha512.
+
 %% @doc Converts various ascii hex/base64 fingerprint formats to binary
--spec convert_fingerprints([string() | binary()]) -> [binary()].
+-spec convert_fingerprints([{fp_hash_type(), string()} | string() | binary()]) ->
+    [binary() | {fp_hash_type(), binary()}].
 convert_fingerprints(FPs) ->
     FPSources = FPs ++ esaml:config(trusted_fingerprints, []),
     lists:map(fun(Print) ->
-        if is_list(Print) ->
-            case string:tokens(Print, ":") of
-                [Type, Base64] ->
-                    Hash = base64:decode(Base64),
-                    case string:to_lower(Type) of
-                        "sha" -> {sha, Hash};
-                        "sha1" -> {sha, Hash};
-                        "md5" -> {md5, Hash};
-                        "sha256" -> {sha256, Hash};
-                        "sha384" -> {sha384, Hash};
-                        "sha512" -> {sha512, Hash}
-                    end;
-                [_] -> error("unknown fingerprint format");
-                HexParts ->
-                    list_to_binary([list_to_integer(P, 16) || P <- HexParts])
-            end;
-        is_binary(Print) ->
-            Print;
-        true ->
-            error("unknown fingerprint format")
-        end
+        convert_fingerprint(Print)
     end, FPSources).
+
+convert_fingerprint(FingerPrint) when is_binary(FingerPrint) ->
+    FingerPrint;
+convert_fingerprint({Type, HexStr}) ->
+    {Type, list_to_binary([list_to_integer(P, 16) || P <- string:tokens(HexStr, ":")])};
+convert_fingerprint(FingerPrint) ->
+    if is_list(FingerPrint) ->
+        case string:tokens(FingerPrint, ":") of
+            [Type, Base64] ->
+                Hash = base64:decode(Base64),
+                case string:to_lower(Type) of
+                    "sha" -> {sha, Hash};
+                    "sha1" -> {sha, Hash};
+                    "md5" -> {md5, Hash};
+                    "sha256" -> {sha256, Hash};
+                    "sha384" -> {sha384, Hash};
+                    "sha512" -> {sha512, Hash}
+                end;
+            [_] ->
+                error("unknown fingerprint format");
+            HexParts ->
+                list_to_binary([list_to_integer(P, 16) || P <- HexParts])
+        end
+    end.
+
 
 %% @doc Converts a calendar:datetime() into SAML time string
 -spec datetime_to_saml(calendar:datetime()) -> esaml:datetime().
 datetime_to_saml(Time) ->
-    {{Y,Mo,D}, {H, Mi, S}} = Time,
+    {{Y, Mo, D}, {H, Mi, S}} = Time,
     lists:flatten(io_lib:format("~4.10.0B-~2.10.0B-~2.10.0BT~2.10.0B:~2.10.0B:~2.10.0BZ", [Y, Mo, D, H, Mi, S])).
 
 %% @doc Converts a SAML time string into a calendar:datetime()
@@ -83,7 +91,7 @@ thread([F | Rest], Acc) ->
     thread(Rest, F(Acc)).
 
 %% @private
--spec threaduntil([fun((Acc :: term()) -> {error, term()} | {stop, term()} | term())], InitAcc::term()) -> {ok, term()} | {error, term()}.
+-spec threaduntil([fun((Acc :: term()) -> {error, term()} | {stop, term()} | term())], InitAcc :: term()) -> {ok, term()} | {error, term()}.
 threaduntil([], Acc) -> {ok, Acc};
 threaduntil([F | Rest], Acc) ->
     case (catch F(Acc)) of
@@ -101,16 +109,18 @@ threaduntil([F | Rest], Acc) ->
 -spec build_nsinfo(#xmlNamespace{}, #xmlElement{}) -> #xmlElement{}.
 build_nsinfo(Ns, Attr = #xmlAttribute{name = Name}) ->
     case string:tokens(atom_to_list(Name), ":") of
-        [NsPrefix, Rest] -> Attr#xmlAttribute{namespace = Ns, nsinfo = {NsPrefix, Rest}};
+        [NsPrefix, Rest] ->
+            Attr#xmlAttribute{namespace = Ns, nsinfo = {NsPrefix, Rest}};
         _ -> Attr#xmlAttribute{namespace = Ns}
     end;
 build_nsinfo(Ns, Elem = #xmlElement{name = Name, content = Kids, attributes = Attrs}) ->
     Elem2 = case string:tokens(atom_to_list(Name), ":") of
-        [NsPrefix, Rest] -> Elem#xmlElement{namespace = Ns, nsinfo = {NsPrefix, Rest}};
+        [NsPrefix, Rest] ->
+            Elem#xmlElement{namespace = Ns, nsinfo = {NsPrefix, Rest}};
         _ -> Elem#xmlElement{namespace = Ns}
     end,
     Elem2#xmlElement{attributes = [build_nsinfo(Ns, Attr) || Attr <- Attrs],
-                    content = [build_nsinfo(Ns, Kid) || Kid <- Kids]};
+        content = [build_nsinfo(Ns, Kid) || Kid <- Kids]};
 build_nsinfo(_Ns, Other) -> Other.
 
 %% @private
@@ -192,7 +202,7 @@ load_metadata(Url) ->
         [{Url, Meta}] -> Meta;
         _ ->
             {ok, {{_Ver, 200, _}, _Headers, Body}} = httpc:request(get, {Url, []}, [{autoredirect, true}], []),
-            {Xml, _} = xmerl_scan:string(Body, [{namespace_conformant, true}]),
+            {Xml, _} = xmerl_scan:string(Body, [{namespace_conformant, false}]),
             {ok, Meta = #esaml_idp_metadata{}} = esaml:decode_idp_metadata(Xml),
             ets:insert(esaml_idp_meta_cache, {Url, Meta}),
             Meta
@@ -264,16 +274,16 @@ unique_id() ->
 fingerprints_test() ->
     [<<0:128>>] = convert_fingerprints([<<0:128>>]),
     {'EXIT', _} = (catch convert_fingerprints(["testing"])),
-    [<<0:32,1,10,3>>] = convert_fingerprints(["00:00:00:00:01:0a:03"]),
+    [<<0:32, 1, 10, 3>>] = convert_fingerprints(["00:00:00:00:01:0a:03"]),
     Hash = crypto:hash(sha, <<"testing1234">>),
-    [{sha,Hash}] = convert_fingerprints(["SHA:" ++ base64:encode_to_string(Hash)]),
+    [{sha, Hash}] = convert_fingerprints(["SHA:" ++ base64:encode_to_string(Hash)]),
     Sha256 = crypto:hash(sha256, <<"testing1234">>),
-    [{sha256,Sha256},{md5,Hash}] = convert_fingerprints(["SHA256:" ++ base64:encode_to_string(Sha256), "md5:" ++ base64:encode_to_string(Hash)]),
+    [{sha256, Sha256}, {md5, Hash}] = convert_fingerprints(["SHA256:" ++ base64:encode_to_string(Sha256), "md5:" ++ base64:encode_to_string(Hash)]),
     {'EXIT', _} = (catch convert_fingerprints(["SOMEALGO:AAAAA="])).
 
 datetime_test() ->
-    "2013-05-02T17:26:53Z" = datetime_to_saml({{2013,5,2},{17,26,53}}),
-    {{1990,11,23},{18,1,1}} = saml_to_datetime("1990-11-23T18:01:01Z").
+    "2013-05-02T17:26:53Z" = datetime_to_saml({{2013, 5, 2}, {17, 26, 53}}),
+    {{1990, 11, 23}, {18, 1, 1}} = saml_to_datetime("1990-11-23T18:01:01Z").
 
 build_nsinfo_test() ->
     EmptyNs = #xmlNamespace{},
@@ -310,7 +320,8 @@ xpath_attr_test() ->
 xpath_attr_trans_test() ->
     {Xml, _} = xmerl_scan:string("<a><b name=\"foo\"><c name=\"bar\">hi</c></b><b name=\"foobar\"><c name=\"foofoo\"></c></b></a>", [{namespace_conformant, true}]),
     Ns = [],
-    Fun = ?xpath_attr("/a/b[@name='foobar']/c/@name", b, name, fun(X) -> list_to_atom(X) end),
+    Fun = ?xpath_attr("/a/b[@name='foobar']/c/@name", b, name, fun(X) ->
+        list_to_atom(X) end),
     Rec = Fun(#b{}),
     ?assertMatch(#b{name = foofoo}, Rec).
 

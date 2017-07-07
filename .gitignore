@@ -1,2 +1,13 @@
-ebin
 .eunit
+.rebar3
+.idea
+.dialyzer.plt
+.rebar
+_build
+ebin
+rebar3.crashdump
+
+*.iml
+*.sublime*
+*.beam
+*.pyc
