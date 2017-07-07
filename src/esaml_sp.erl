@@ -12,8 +12,8 @@
 -include("esaml.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
--export([setup/1, generate_authn_request/2, generate_metadata/1]).
--export([validate_assertion/2, validate_assertion/3]).
+-export([generate_authn_request/2, generate_metadata/1]).
+-export([validate_assertion/3]).
 -export([generate_logout_request/3, generate_logout_response/3]).
 -export([validate_logout_request/2, validate_logout_response/2]).
 
@@ -28,22 +28,22 @@ add_xml_id(Xml) ->
         #xmlAttribute{name = 'ID',
             value = esaml_util:unique_id(),
             namespace = #xmlNamespace{}}
-        ]}.
+    ]}.
 
 %% @doc Return an AuthnRequest as an XML element
 -spec generate_authn_request(IdpURL :: string(), esaml:sp()) -> #xmlElement{}.
-generate_authn_request(IdpURL, SP = #esaml_sp{metadata_uri = MetaURI, consume_uri = ConsumeURI}) ->
+generate_authn_request(IdpURL, SP = #esaml_sp{entity_id = EntityId, consume_uri = ConsumeURI}) ->
     Now = erlang:localtime_to_universaltime(erlang:localtime()),
     Stamp = esaml_util:datetime_to_saml(Now),
 
     Xml = esaml:to_xml(#esaml_authnreq{issue_instant = Stamp,
-                                       destination = IdpURL,
-                                       issuer = MetaURI,
-                                       consumer_location = ConsumeURI}),
-    if SP#esaml_sp.sp_sign_requests ->
+        destination = IdpURL,
+        issuer = EntityId,
+        consumer_location = ConsumeURI}),
+    if SP#esaml_sp.sign_requests ->
         xmerl_dsig:sign(Xml, SP#esaml_sp.key, SP#esaml_sp.certificate);
-    true ->
-        add_xml_id(Xml)
+        true ->
+            add_xml_id(Xml)
     end.
 
 %% @doc Return a LogoutRequest as an XML element
@@ -53,14 +53,14 @@ generate_logout_request(IdpURL, NameID, SP = #esaml_sp{metadata_uri = MetaURI}) 
     Stamp = esaml_util:datetime_to_saml(Now),
 
     Xml = esaml:to_xml(#esaml_logoutreq{issue_instant = Stamp,
-                                       destination = IdpURL,
-                                       issuer = MetaURI,
-                                       name = NameID,
-                                       reason = user}),
-    if SP#esaml_sp.sp_sign_requests ->
+        destination = IdpURL,
+        issuer = MetaURI,
+        name = NameID,
+        reason = user}),
+    if SP#esaml_sp.sign_requests ->
         xmerl_dsig:sign(Xml, SP#esaml_sp.key, SP#esaml_sp.certificate);
-    true ->
-        add_xml_id(Xml)
+        true ->
+            add_xml_id(Xml)
     end.
 
 %% @doc Return a LogoutResponse as an XML element
@@ -70,57 +70,43 @@ generate_logout_response(IdpURL, Status, SP = #esaml_sp{metadata_uri = MetaURI})
     Stamp = esaml_util:datetime_to_saml(Now),
 
     Xml = esaml:to_xml(#esaml_logoutresp{issue_instant = Stamp,
-                                       destination = IdpURL,
-                                       issuer = MetaURI,
-                                       status = Status}),
-    if SP#esaml_sp.sp_sign_requests ->
+        destination = IdpURL,
+        issuer = MetaURI,
+        status = Status}),
+    if SP#esaml_sp.sign_requests ->
         xmerl_dsig:sign(Xml, SP#esaml_sp.key, SP#esaml_sp.certificate);
-    true ->
-        add_xml_id(Xml)
+        true ->
+            add_xml_id(Xml)
     end.
 
 %% @doc Return the SP metadata as an XML element
 -spec generate_metadata(esaml:sp()) -> #xmlElement{}.
-generate_metadata(SP = #esaml_sp{org = Org, tech = Tech}) ->
-    Xml = esaml:to_xml(#esaml_sp_metadata{
-        org = Org,
-        tech = Tech,
-        signed_requests = SP#esaml_sp.sp_sign_requests,
-        signed_assertions = SP#esaml_sp.idp_signs_assertions or SP#esaml_sp.idp_signs_envelopes,
-        certificate = SP#esaml_sp.certificate,
-        cert_chain = SP#esaml_sp.cert_chain,
-        consumer_location = SP#esaml_sp.consume_uri,
-        logout_location = SP#esaml_sp.logout_uri,
-        entity_id = SP#esaml_sp.metadata_uri}),
-    if SP#esaml_sp.sp_sign_metadata ->
-        xmerl_dsig:sign(Xml, SP#esaml_sp.key, SP#esaml_sp.certificate);
-    true ->
-        add_xml_id(Xml)
-    end.
-
-%% @doc Initialize and validate an esaml_sp record
--spec setup(esaml:sp()) -> esaml:sp().
-setup(SP = #esaml_sp{trusted_fingerprints = FPs, metadata_uri = MetaURI,
-                     consume_uri = ConsumeURI}) ->
-    Fingerprints = esaml_util:convert_fingerprints(FPs),
-    case MetaURI of "" -> error("must specify metadata URI"); _ -> ok end,
-    case ConsumeURI of "" -> error("must specify consume URI"); _ -> ok end,
-    if (SP#esaml_sp.key =:= undefined) andalso (SP#esaml_sp.sp_sign_requests) ->
-        error("must specify a key to sign requests");
-    true -> ok
-    end,
-    if (not (SP#esaml_sp.key =:= undefined)) and (not (SP#esaml_sp.certificate =:= undefined)) ->
-        SP#esaml_sp{sp_sign_requests = true, sp_sign_metadata = true, trusted_fingerprints = Fingerprints};
-    true ->
-        SP#esaml_sp{trusted_fingerprints = Fingerprints}
+generate_metadata(#esaml_sp{} = SP) ->
+    Xml = esaml:get_sp_metadata(SP),
+    case SP#esaml_sp.sign_metadata of
+        true ->
+            xmerl_dsig:sign(Xml, SP#esaml_sp.key, SP#esaml_sp.certificate);
+        false ->
+            add_xml_id(Xml)
     end.
 
 %% @doc Validate and parse a LogoutRequest element
 -spec validate_logout_request(xml(), esaml:sp()) ->
-        {ok, esaml:logoutreq()} | {error, Reason :: term()}.
+    {ok, esaml:logoutreq()} | {error, Reason :: term()}.
 validate_logout_request(Xml, SP = #esaml_sp{}) ->
     Ns = [{"samlp", 'urn:oasis:names:tc:SAML:2.0:protocol'},
-          {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'}],
+        {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'}],
+
+
+    % @fixme to powinny by podawane per IDP, można zapisa w relay state i tutaj przekazac
+    IDPSIgnsLogoutreqeustsHack = false,
+    % @fixme FP powinny by podawane per IDP, można zapisa w relay state do kogo przekierowujemy i tutaj przekazac
+    FPHack = esaml_util:convert_fingerprints([
+        {sha256, "4C:68:85:6F:56:86:D8:40:63:12:F0:0E:23:BE:A5:FA:8C:32:6C:BF:52:97:15:78:EA:B4:E3:7F:87:B1:05:52"},
+        {sha256, "12:8A:76:D0:BB:8E:E0:0E:24:ED:04:F0:FB:70:88:2B:BF:C0:0A:9D:BA:84:F7:12:A0:D3:78:57:E1:0C:BB:70"},
+        "11:9b:9e:02:79:59:cd:b7:c6:62:cf:d0:75:d9:e2:ef:38:4e:44:5f"
+    ]),
+
     esaml_util:threaduntil([
         fun(X) ->
             case xmerl_xpath:string("/samlp:LogoutRequest", X, [{namespace, Ns}]) of
@@ -129,12 +115,12 @@ validate_logout_request(Xml, SP = #esaml_sp{}) ->
             end
         end,
         fun(X) ->
-            if SP#esaml_sp.idp_signs_logout_requests ->
-                case xmerl_dsig:verify(X, SP#esaml_sp.trusted_fingerprints) of
+            if IDPSIgnsLogoutreqeustsHack ->
+                case xmerl_dsig:verify(X, FPHack) of
                     ok -> X;
                     OuterError -> {error, OuterError}
                 end;
-            true -> X
+                true -> X
             end
         end,
         fun(X) ->
@@ -148,11 +134,19 @@ validate_logout_request(Xml, SP = #esaml_sp{}) ->
 
 %% @doc Validate and parse a LogoutResponse element
 -spec validate_logout_response(xml(), esaml:sp()) ->
-        {ok, esaml:logoutresp()} | {error, Reason :: term()}.
+    {ok, esaml:logoutresp()} | {error, Reason :: term()}.
 validate_logout_response(Xml, SP = #esaml_sp{}) ->
     Ns = [{"samlp", 'urn:oasis:names:tc:SAML:2.0:protocol'},
-          {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'},
-          {"ds", 'http://www.w3.org/2000/09/xmldsig#'}],
+        {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'},
+        {"ds", 'http://www.w3.org/2000/09/xmldsig#'}],
+
+    % @fixme FP powinny by podawane per IDP, można zapisa w relay state do kogo przekierowujemy i tutaj przekazac
+    FPHack = esaml_util:convert_fingerprints([
+        {sha256, "4C:68:85:6F:56:86:D8:40:63:12:F0:0E:23:BE:A5:FA:8C:32:6C:BF:52:97:15:78:EA:B4:E3:7F:87:B1:05:52"},
+        {sha256, "12:8A:76:D0:BB:8E:E0:0E:24:ED:04:F0:FB:70:88:2B:BF:C0:0A:9D:BA:84:F7:12:A0:D3:78:57:E1:0C:BB:70"},
+        "11:9b:9e:02:79:59:cd:b7:c6:62:cf:d0:75:d9:e2:ef:38:4e:44:5f"
+    ]),
+
     esaml_util:threaduntil([
         fun(X) ->
             case xmerl_xpath:string("/samlp:LogoutResponse", X, [{namespace, Ns}]) of
@@ -164,7 +158,7 @@ validate_logout_response(Xml, SP = #esaml_sp{}) ->
             % Signature is optional on the logout_response. Verify it if we have it.
             case xmerl_xpath:string("/samlp:LogoutResponse/ds:Signature", X, [{namespace, Ns}]) of
                 [#xmlElement{}] ->
-                    case xmerl_dsig:verify(X, SP#esaml_sp.trusted_fingerprints) of
+                    case xmerl_dsig:verify(X, FPHack) of
                         ok -> X;
                         OuterError -> {error, OuterError}
                     end;
@@ -179,62 +173,141 @@ validate_logout_response(Xml, SP = #esaml_sp{}) ->
             end
         end,
         fun(LR = #esaml_logoutresp{status = success}) -> LR;
-           (#esaml_logoutresp{status = S}) -> {error, S} end
+            (#esaml_logoutresp{status = S}) -> {error, S} end
     ], Xml).
 
-%% @doc Validate and decode an assertion envelope in parsed XML
--spec validate_assertion(xml(), esaml:sp()) ->
-        {ok, esaml:assertion()} | {error, Reason :: term()}.
-validate_assertion(Xml, SP = #esaml_sp{}) ->
-    validate_assertion(Xml, fun(_A, _Digest) -> ok end, SP).
+
+-spec get_encrypted_assertion(Xml :: [#xmlElement{}], #esaml_sp{}) -> #xmlElement{}.
+get_encrypted_assertion(Xml, #esaml_sp{key = PrivKey}) ->
+    Ns = [
+        {"samlp", "urn:oasis:names:tc:SAML:2.0:protocol"},
+        {"saml", "urn:oasis:names:tc:SAML:2.0:assertion"},
+        {"xenc", "http://www.w3.org/2001/04/xmlenc#"},
+        {"ds", "http://www.w3.org/2000/09/xmldsig#"}
+    ],
+    EncMethodXML = xmerl_xpath:string("/samlp:Response/saml:EncryptedAssertion/xenc:EncryptedData/xenc:EncryptionMethod", Xml, [{namespace, Ns}]),
+    "http://www.w3.org/2001/04/xmlenc#aes128-cbc" = get_attr_value(EncMethodXML, 'Algorithm'),
+
+    % TODO verify if the same as our cert
+%%    EncCert = get_text(xmerl_xpath:string("/samlp:Response/saml:EncryptedAssertion/xenc:EncryptedData/ds:KeyInfo/xenc:EncryptedKey/ds:KeyInfo/ds:X509Data/ds:X509Certificate", Xml, [{namespace, Ns}])),
+
+    KeyCipherValueB64 = get_text(xmerl_xpath:string("/samlp:Response/saml:EncryptedAssertion/xenc:EncryptedData/ds:KeyInfo/xenc:EncryptedKey/xenc:CipherData/xenc:CipherValue", Xml, [{namespace, Ns}])),
+    KeyCipherValue = base64:decode(KeyCipherValueB64),
+
+    EncAssCipherTextB64 = get_text(xmerl_xpath:string("/samlp:Response/saml:EncryptedAssertion/xenc:EncryptedData/xenc:CipherData/xenc:CipherValue", Xml, [{namespace, Ns}])),
+    EncAssCipherText = base64:decode(EncAssCipherTextB64),
+
+    AESKey = public_key:decrypt_private(KeyCipherValue, PrivKey, [{rsa_pad, rsa_pkcs1_oaep_padding}]),
+
+    Assertion = aes_cbc_decrypt(EncAssCipherText, AESKey),
+    {AssertionXml, _} = xmerl_scan:string(binary_to_list(Assertion), [{namespace_conformant, true}]),
+    [Res] = xmerl_xpath:string("/saml:Assertion", AssertionXml, [{namespace, Ns}]),
+    Res.
 
 %% @doc Validate and decode an assertion envelope in parsed XML
 %%
 %% The dupe_fun argument is intended to detect duplicate assertions
 %% in the case of a replay attack.
 -spec validate_assertion(xml(), dupe_fun(), esaml:sp()) ->
-        {ok, esaml:assertion()} | {error, Reason :: term()}.
-validate_assertion(Xml, DuplicateFun, SP = #esaml_sp{}) ->
+    {ok, esaml:assertion()} | {error, Reason :: term()}.
+validate_assertion(Xml, SP = #esaml_sp{}, IdP = #esaml_idp{}) ->
     Ns = [{"samlp", 'urn:oasis:names:tc:SAML:2.0:protocol'},
-          {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'}],
+        {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'}],
+
+    #esaml_idp{
+        trusted_fingerprints = IdPTrustedFPs,
+        % TODO use this option to decide if we should look for Assertion or EncryptedAssertion
+        % and log sensible error when it is not present.
+        encrypts_assertions = IdpEncryptsAssertions,
+        signs_assertions = IdPSignsAssertions,
+        signs_envelopes = IDPSignsEnvelopes
+    } = IdP,
+
     esaml_util:threaduntil([
         fun(X) ->
             case xmerl_xpath:string("/samlp:Response/saml:Assertion", X, [{namespace, Ns}]) of
-                [A] -> A;
-                _ -> {error, bad_assertion}
+                [] ->
+                    case xmerl_xpath:string("/samlp:Response/saml:EncryptedAssertion", X, [{namespace, Ns}]) of
+                        [] ->
+                            {error, bad_assertion};
+                        _ ->
+                            % TODO maybe pass just the EncryptedAssertion node
+                            get_encrypted_assertion(Xml, SP)
+                    end;
+                [A] ->
+                    A
             end
         end,
         fun(A) ->
-            if SP#esaml_sp.idp_signs_envelopes ->
-                case xmerl_dsig:verify(Xml, SP#esaml_sp.trusted_fingerprints) of
+            if IDPSignsEnvelopes ->
+                case xmerl_dsig:verify(Xml, IdPTrustedFPs) of
                     ok -> A;
                     OuterError -> {error, {envelope, OuterError}}
                 end;
-            true -> A
+                true -> A
             end
         end,
         fun(A) ->
-            if SP#esaml_sp.idp_signs_assertions ->
-                case xmerl_dsig:verify(A, SP#esaml_sp.trusted_fingerprints) of
+            if IdPSignsAssertions ->
+                case xmerl_dsig:verify(A, IdPTrustedFPs) of
                     ok -> A;
                     InnerError -> {error, {assertion, InnerError}}
                 end;
-            true -> A
+                true -> A
             end
         end,
         fun(A) ->
-            case esaml:validate_assertion(A, SP#esaml_sp.consume_uri, SP#esaml_sp.metadata_uri) of
+            case esaml:validate_assertion(A, SP#esaml_sp.consume_uri, SP#esaml_sp.entity_id) of
                 {ok, AR} -> AR;
                 {error, Reason} -> {error, Reason}
             end
-        end,
-        fun(AR) ->
-            case DuplicateFun(AR, xmerl_dsig:digest(Xml)) of
-                ok -> AR;
-                _ -> {error, duplicate}
-            end
         end
     ], Xml).
+
+
+% Retrieves text value from #xmlElement{}
+-spec get_text(#xmlElement{} | [#xmlElement{}]) -> binary().
+get_text([XmlElement]) ->
+    get_text(XmlElement);
+get_text(#xmlElement{content = [#xmlText{value = Val}]}) ->
+    Val.
+
+
+% Retrieves attribute value from #xmlElement{}
+-spec get_attr_value(#xmlElement{} | [#xmlElement{}], atom()) -> binary().
+get_attr_value([XmlElement], AttrName) ->
+    get_attr_value(XmlElement, AttrName);
+get_attr_value(#xmlElement{attributes = Nodes}, AttrName) ->
+    case lists:keyfind('Algorithm', 2, Nodes) of
+        false ->
+            throw({attr_not_found, AttrName});
+        #xmlAttribute{value = Val} ->
+            Val
+    end.
+
+% Decrypts AES CBC encrypted text
+-spec aes_cbc_decrypt(CipherTextWithPadding :: binary(), AESKey :: binary()) ->
+    binary().
+aes_cbc_decrypt(<<IVec:16/binary, CipherText/binary>>, AESKey) ->
+    DecryptPadded = crypto:block_decrypt(aes_cbc, AESKey, IVec, CipherText),
+    unpad_aes_cbc(DecryptPadded).
+
+
+% Removes padding from AES CBC decrypted text
+-spec unpad_aes_cbc(binary()) -> binary().
+unpad_aes_cbc(B) ->
+    Size = size(B),
+    {_, B2} = split_binary(B, Size - 1),
+    [Pad] = binary_to_list(B2),
+    Len = case Pad of
+        0 ->
+            %% the entire last block is padding
+            Size - 16;
+        _ ->
+            Size - Pad
+    end,
+    {Bfinal, _} = split_binary(B, Len),
+    Bfinal.
 
 
 -ifdef(TEST).
