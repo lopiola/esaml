@@ -15,10 +15,23 @@
     end).
 
 -define(xpath_generic(XPath, Record, Field, TargetType, NotFoundRet),
-	fun(Resp) ->
+    fun(Resp) ->
         case xmerl_xpath:string(XPath, Xml, [{namespace, Ns}]) of
             [#TargetType{value = V}] -> Resp#Record{Field = V};
             _ -> NotFoundRet
+        end
+    end).
+
+-define(xpath_generic_one_of(XPath1, XPath2, Record, Field, TargetType, NotFoundRet),
+    fun(Resp) ->
+        case xmerl_xpath:string(XPath1, Xml, [{namespace, Ns}]) of
+            [#TargetType{value = V}] ->
+                Resp#Record{Field = V};
+            _ ->
+                case xmerl_xpath:string(XPath2, Xml, [{namespace, Ns}]) of
+                    [#TargetType{value = V}] -> Resp#Record{Field = V};
+                    _ -> NotFoundRet
+                end
         end
     end).
 
@@ -41,6 +54,9 @@
     ?xpath_generic(XPath, Record, Field, xmlText, {error, Error})).
 -define(xpath_text_required(XPath, Record, Field, TransFun, Error),
     ?xpath_generic(XPath, Record, Field, TransFun, xmlText, {error, Error})).
+
+-define(xpath_text_required_one_of(XPath1, XPath2, Record, Field, Error),
+    ?xpath_generic_one_of(XPath1, XPath2, Record, Field, xmlText, {error, Error})).
 
 -define(xpath_text_append(XPath, Record, Field, Sep),
     fun(Resp) ->

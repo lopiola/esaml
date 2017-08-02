@@ -138,6 +138,7 @@ common_attrib_map("urn:oid:0.9.2342.19200300.100.1.3") -> mail;
 common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.10") -> eduPersonTargetedID;
 common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.13") -> eduPersonUniqueId;
 common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.6") -> eduPersonPrincipalName;
+common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.1") -> eduPersonAffiliation;
 common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.9") -> eduPersonScopedAffiliation;
 common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.7") -> eduPersonEntitlement;
 common_attrib_map("urn:oid:1.3.6.1.4.1.25178.1.2.9") -> schacHomeOrganization;
@@ -159,11 +160,12 @@ decode_idp_metadata(Xml) ->
         {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'},
         {"md", 'urn:oasis:names:tc:SAML:2.0:metadata'},
         {"ds", 'http://www.w3.org/2000/09/xmldsig#'}],
-    esaml_util:threaduntil([
+    Result = esaml_util:threaduntil([
         ?xpath_attr_required("/md:EntityDescriptor/@entityID", esaml_idp_metadata, entity_id, bad_entity),
-        % TODO enable support for HTTP-POST binding
-        ?xpath_attr_required("/md:EntityDescriptor/md:IDPSSODescriptor/md:SingleSignOnService[@Binding='urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect']/@Location",
-            esaml_idp_metadata, login_location, missing_sso_location),
+        ?xpath_attr("/md:EntityDescriptor/md:IDPSSODescriptor/md:SingleSignOnService[@Binding='urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect']/@Location",
+            esaml_idp_metadata, redirect_login_location),
+        ?xpath_attr("/md:EntityDescriptor/md:IDPSSODescriptor/md:SingleSignOnService[@Binding='urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST']/@Location",
+            esaml_idp_metadata, post_login_location),
         ?xpath_attr("/md:EntityDescriptor/md:IDPSSODescriptor/md:SingleLogoutService[@Binding='urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST']/@Location",
             esaml_idp_metadata, logout_location),
         ?xpath_text("/md:EntityDescriptor/md:IDPSSODescriptor/md:NameIDFormat/text()",
@@ -172,7 +174,15 @@ decode_idp_metadata(Xml) ->
             base64:decode(list_to_binary(X)) end),
         ?xpath_recurse("/md:EntityDescriptor/md:ContactPerson[@contactType='technical']", esaml_idp_metadata, tech, decode_contact),
         ?xpath_recurse("/md:EntityDescriptor/md:Organization", esaml_idp_metadata, org, decode_org)
-    ], #esaml_idp_metadata{}).
+    ], #esaml_idp_metadata{}),
+    % Make sure SSO URL for at least one binding was resolved
+    case Result of
+        #esaml_idp_metadata{redirect_login_location = undefined, post_login_location = undefined} ->
+            {error, missing_sso_location};
+        _ ->
+            Result
+    end.
+
 
 %% @private
 -spec decode_org(Xml :: #xmlElement{}) -> {ok, #esaml_org{}} | {error, term()}.
@@ -181,7 +191,10 @@ decode_org(Xml) ->
         {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'},
         {"md", 'urn:oasis:names:tc:SAML:2.0:metadata'}],
     esaml_util:threaduntil([
-        ?xpath_text_required("/md:Organization/md:OrganizationName/text()", esaml_org, name, bad_org),
+        ?xpath_text_required_one_of(
+            "/md:Organization/md:OrganizationName/text()",
+            "/md:Organization/md:OrganizationName[@xml:lang='en']/text()",
+            esaml_org, name, bad_org),
         ?xpath_text("/md:Organization/md:OrganizationDisplayName/text()", esaml_org, displayname),
         ?xpath_text("/md:Organization/md:OrganizationURL/text()", esaml_org, url)
     ], #esaml_org{}).

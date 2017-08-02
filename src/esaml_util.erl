@@ -24,8 +24,10 @@
 -type fp_hash_type() :: sha | md5 | sha256 | sha384 | sha512.
 
 %% @doc Converts various ascii hex/base64 fingerprint formats to binary
--spec convert_fingerprints([{fp_hash_type(), string()} | string() | binary()]) ->
-    [binary() | {fp_hash_type(), binary()}].
+-spec convert_fingerprints([{fp_hash_type(), string()} | string() | binary()] | any) ->
+    [binary() | {fp_hash_type(), binary()}] | any.
+convert_fingerprints(any) ->
+    any;
 convert_fingerprints(FPs) ->
     FPSources = FPs ++ esaml:config(trusted_fingerprints, []),
     lists:map(fun(Print) ->

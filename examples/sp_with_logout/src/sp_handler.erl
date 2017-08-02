@@ -59,7 +59,7 @@ handle(<<"GET">>, <<"metadata">>, Req, S = #state{sp = SP}) ->
 % we are already logged in, otherwise we will make an AuthnRequest and send it to 
 % our IDP
 handle(<<"GET">>, <<"auth">>, Req, S = #state{sp = SP,
-        idp = #esaml_idp_metadata{login_location = IDP}}) ->
+        idp = #esaml_idp_metadata{redirect_login_location = IDP}}) ->
     {CookieID, Req2} = cowboy_req:cookie(<<"sp_cookie">>, Req),
     case CookieID of
         undefined ->

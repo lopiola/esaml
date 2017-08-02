@@ -56,7 +56,7 @@ handle(<<"GET">>, <<"metadata">>, Req, S = #state{sp = SP}) ->
 % Visit /saml/auth to start the authentication process -- we will make an AuthnRequest
 % and send it to our IDP
 handle(<<"GET">>, <<"auth">>, Req, S = #state{sp = SP,
-        idp = #esaml_idp_metadata{login_location = IDP}}) ->
+        idp = #esaml_idp_metadata{redirect_login_location = IDP}}) ->
     {ok, Req2} = esaml_cowboy:reply_with_authnreq(SP, IDP, <<"foo">>, Req),
     {ok, Req2, S};
 

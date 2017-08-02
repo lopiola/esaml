@@ -98,14 +98,13 @@ validate_logout_request(Xml, SP = #esaml_sp{}) ->
         {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'}],
 
 
-    % @fixme to powinny by podawane per IDP, można zapisa w relay state i tutaj przekazac
-    IDPSIgnsLogoutreqeustsHack = false,
-    % @fixme FP powinny by podawane per IDP, można zapisa w relay state do kogo przekierowujemy i tutaj przekazac
-    FPHack = esaml_util:convert_fingerprints([
-        {sha256, "4C:68:85:6F:56:86:D8:40:63:12:F0:0E:23:BE:A5:FA:8C:32:6C:BF:52:97:15:78:EA:B4:E3:7F:87:B1:05:52"},
-        {sha256, "12:8A:76:D0:BB:8E:E0:0E:24:ED:04:F0:FB:70:88:2B:BF:C0:0A:9D:BA:84:F7:12:A0:D3:78:57:E1:0C:BB:70"},
-        "11:9b:9e:02:79:59:cd:b7:c6:62:cf:d0:75:d9:e2:ef:38:4e:44:5f"
-    ]),
+    % @TODO currently logout request is not supported, below issues should be
+    % sorted out when it is.
+
+    % @todo this should be configurable
+    IDPSignsLogoutRequests = false,
+    % @todo IDP record should be passed to this function so we can get the FPs
+    Fingerprints = any,
 
     esaml_util:threaduntil([
         fun(X) ->
@@ -115,8 +114,8 @@ validate_logout_request(Xml, SP = #esaml_sp{}) ->
             end
         end,
         fun(X) ->
-            if IDPSIgnsLogoutreqeustsHack ->
-                case xmerl_dsig:verify(X, FPHack) of
+            if IDPSignsLogoutRequests ->
+                case xmerl_dsig:verify(X, Fingerprints) of
                     ok -> X;
                     OuterError -> {error, OuterError}
                 end;
@@ -140,12 +139,11 @@ validate_logout_response(Xml, SP = #esaml_sp{}) ->
         {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'},
         {"ds", 'http://www.w3.org/2000/09/xmldsig#'}],
 
-    % @fixme FP powinny by podawane per IDP, można zapisa w relay state do kogo przekierowujemy i tutaj przekazac
-    FPHack = esaml_util:convert_fingerprints([
-        {sha256, "4C:68:85:6F:56:86:D8:40:63:12:F0:0E:23:BE:A5:FA:8C:32:6C:BF:52:97:15:78:EA:B4:E3:7F:87:B1:05:52"},
-        {sha256, "12:8A:76:D0:BB:8E:E0:0E:24:ED:04:F0:FB:70:88:2B:BF:C0:0A:9D:BA:84:F7:12:A0:D3:78:57:E1:0C:BB:70"},
-        "11:9b:9e:02:79:59:cd:b7:c6:62:cf:d0:75:d9:e2:ef:38:4e:44:5f"
-    ]),
+    % @TODO currently logout response is not supported, below issues should be
+    % sorted out when it is.
+
+    % @todo IDP record should be passed to this function so we can get the FPs
+    Fingerprints = any,
 
     esaml_util:threaduntil([
         fun(X) ->
@@ -158,7 +156,7 @@ validate_logout_response(Xml, SP = #esaml_sp{}) ->
             % Signature is optional on the logout_response. Verify it if we have it.
             case xmerl_xpath:string("/samlp:LogoutResponse/ds:Signature", X, [{namespace, Ns}]) of
                 [#xmlElement{}] ->
-                    case xmerl_dsig:verify(X, FPHack) of
+                    case xmerl_dsig:verify(X, Fingerprints) of
                         ok -> X;
                         OuterError -> {error, OuterError}
                     end;
