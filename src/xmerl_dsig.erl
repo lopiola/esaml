@@ -189,7 +189,7 @@ verify(Element, Fingerprints) ->
     CanonSha2 = base64:decode(Sha64),
 
     if not (CanonSha =:= CanonSha2) ->
-        {error, bad_digest};
+        {error, {bad_digest, {received, Sha64}, {calculated, base64:encode(CanonSha)}}};
 
     true ->
         [SigInfo] = xmerl_xpath:string("ds:Signature/ds:SignedInfo", Element, [{namespace, DsNs}]),
