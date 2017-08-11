@@ -127,6 +127,7 @@ xml_safe_string(Str, Quotes) when is_list(Str) ->
     [Next | Rest] = Str,
     if
         (not Quotes andalso ([Next] =:= "\n")) -> [Next | xml_safe_string(Rest, Quotes)];
+        (not Quotes andalso ([Next] =:= "\t")) -> [Next | xml_safe_string(Rest, Quotes)];
         (Next < 32) ->
             lists:flatten(["&#x" ++ integer_to_list(Next, 16) ++ ";" | xml_safe_string(Rest, Quotes)]);
         (Quotes andalso ([Next] =:= "\"")) -> lists:flatten(["&quot;" | xml_safe_string(Rest, Quotes)]);
