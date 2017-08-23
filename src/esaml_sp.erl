@@ -184,7 +184,10 @@ get_encrypted_assertion(Xml, #esaml_sp{key = PrivKey}) ->
         {"ds", "http://www.w3.org/2000/09/xmldsig#"}
     ],
     EncMethodXML = xmerl_xpath:string("/samlp:Response/saml:EncryptedAssertion/xenc:EncryptedData/xenc:EncryptionMethod", Xml, [{namespace, Ns}]),
-    "http://www.w3.org/2001/04/xmlenc#aes128-cbc" = get_attr_value(EncMethodXML, 'Algorithm'),
+    true = lists:member(get_attr_value(EncMethodXML, 'Algorithm'), [
+        "http://www.w3.org/2001/04/xmlenc#aes128-cbc",
+        "http://www.w3.org/2001/04/xmlenc#aes256-cbc"
+    ]),
 
     % TODO verify if the same as our cert
 %%    EncCert = get_text(xmerl_xpath:string("/samlp:Response/saml:EncryptedAssertion/xenc:EncryptedData/ds:KeyInfo/xenc:EncryptedKey/ds:KeyInfo/ds:X509Data/ds:X509Certificate", Xml, [{namespace, Ns}])),
@@ -283,7 +286,8 @@ get_attr_value(#xmlElement{attributes = Nodes}, AttrName) ->
             Val
     end.
 
-% Decrypts AES CBC encrypted text
+% Decrypts AES CBC encrypted text. crypto will pick desired algorithm
+% (AES-CBC-128 or AES-CBC-256) based on key length.
 -spec aes_cbc_decrypt(CipherTextWithPadding :: binary(), AESKey :: binary()) ->
     binary().
 aes_cbc_decrypt(<<IVec:16/binary, CipherText/binary>>, AESKey) ->
