@@ -13,51 +13,16 @@
 -include_lib("public_key/include/public_key.hrl").
 -include("esaml.hrl").
 
+-define(IDP_CACHE_VALIDITY_SEC, application:get_env(esaml, idp_cache_validity_sec, 3600)).
+
 -export([datetime_to_saml/1, saml_to_datetime/1]).
 -export([start_ets/0, check_dupe_ets/2]).
 -export([folduntil/3, thread/2, threaduntil/2]).
 -export([build_nsinfo/2]).
--export([load_private_key/1, load_certificate_chain/1, load_certificate/1, load_metadata/2, load_metadata/1]).
--export([convert_fingerprints/1]).
+-export([load_private_key/1, load_certificate_chain/1, load_certificate/1, load_metadata/1]).
 -export([unique_id/0]).
 
 -type fp_hash_type() :: sha | md5 | sha256 | sha384 | sha512.
-
-%% @doc Converts various ascii hex/base64 fingerprint formats to binary
--spec convert_fingerprints([{fp_hash_type(), string()} | string() | binary()] | any) ->
-    [binary() | {fp_hash_type(), binary()}] | any.
-convert_fingerprints(any) ->
-    any;
-convert_fingerprints(FPs) ->
-    FPSources = FPs ++ esaml:config(trusted_fingerprints, []),
-    lists:map(fun(Print) ->
-        convert_fingerprint(Print)
-    end, FPSources).
-
-convert_fingerprint(FingerPrint) when is_binary(FingerPrint) ->
-    FingerPrint;
-convert_fingerprint({Type, HexStr}) ->
-    {Type, list_to_binary([list_to_integer(P, 16) || P <- string:tokens(HexStr, ":")])};
-convert_fingerprint(FingerPrint) ->
-    if is_list(FingerPrint) ->
-        case string:tokens(FingerPrint, ":") of
-            [Type, Base64] ->
-                Hash = base64:decode(Base64),
-                case string:to_lower(Type) of
-                    "sha" -> {sha, Hash};
-                    "sha1" -> {sha, Hash};
-                    "md5" -> {md5, Hash};
-                    "sha256" -> {sha256, Hash};
-                    "sha384" -> {sha384, Hash};
-                    "sha512" -> {sha512, Hash}
-                end;
-            [_] ->
-                error("unknown fingerprint format");
-            HexParts ->
-                list_to_binary([list_to_integer(P, 16) || P <- HexParts])
-        end
-    end.
-
 
 %% @doc Converts a calendar:datetime() into SAML time string
 -spec datetime_to_saml(calendar:datetime()) -> esaml:datetime().
@@ -179,34 +144,18 @@ load_certificate_chain(CertPath) ->
             CertChain
     end.
 
-%% @doc Reads IDP metadata from a URL (or ETS memory cache) and validates the signature
--spec load_metadata(Url :: string(), Fingerprints :: [string() | binary()]) -> esaml:idp_metadata().
-load_metadata(Url, FPs) ->
-    Fingerprints = convert_fingerprints(FPs),
-    case ets:lookup(esaml_idp_meta_cache, Url) of
-        [{Url, Meta}] -> Meta;
-        _ ->
-            {ok, {{_Ver, 200, _}, _Headers, Body}} = httpc:request(get, {Url, []}, [{autoredirect, true}], []),
-            {Xml, _} = xmerl_scan:string(Body, [{namespace_conformant, true}]),
-            case xmerl_dsig:verify(Xml, Fingerprints) of
-                ok -> ok;
-                Err -> error(Err)
-            end,
-            {ok, Meta = #esaml_idp_metadata{}} = esaml:decode_idp_metadata(Xml),
-            ets:insert(esaml_idp_meta_cache, {Url, Meta}),
-            Meta
-    end.
-
 %% @doc Reads IDP metadata from a URL (or ETS memory cache)
 -spec load_metadata(Url :: string()) -> esaml:idp_metadata().
 load_metadata(Url) ->
+    NotOlderThan = erlang:system_time(seconds) - ?IDP_CACHE_VALIDITY_SEC,
     case ets:lookup(esaml_idp_meta_cache, Url) of
-        [{Url, Meta}] -> Meta;
+        [{Url, Meta, Timestamp}] when Timestamp >= NotOlderThan ->
+            Meta;
         _ ->
             {ok, {{_Ver, 200, _}, _Headers, Body}} = httpc:request(get, {Url, []}, [{autoredirect, true}], []),
             {Xml, _} = xmerl_scan:string(Body, [{namespace_conformant, false}]),
             {ok, Meta = #esaml_idp_metadata{}} = esaml:decode_idp_metadata(Xml),
-            ets:insert(esaml_idp_meta_cache, {Url, Meta}),
+            ets:insert(esaml_idp_meta_cache, {Url, Meta, erlang:system_time(seconds)}),
             Meta
     end.
 
@@ -272,16 +221,6 @@ unique_id() ->
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
-
-fingerprints_test() ->
-    [<<0:128>>] = convert_fingerprints([<<0:128>>]),
-    {'EXIT', _} = (catch convert_fingerprints(["testing"])),
-    [<<0:32, 1, 10, 3>>] = convert_fingerprints(["00:00:00:00:01:0a:03"]),
-    Hash = crypto:hash(sha, <<"testing1234">>),
-    [{sha, Hash}] = convert_fingerprints(["SHA:" ++ base64:encode_to_string(Hash)]),
-    Sha256 = crypto:hash(sha256, <<"testing1234">>),
-    [{sha256, Sha256}, {md5, Hash}] = convert_fingerprints(["SHA256:" ++ base64:encode_to_string(Sha256), "md5:" ++ base64:encode_to_string(Hash)]),
-    {'EXIT', _} = (catch convert_fingerprints(["SOMEALGO:AAAAA="])).
 
 datetime_test() ->
     "2013-05-02T17:26:53Z" = datetime_to_saml({{2013, 5, 2}, {17, 26, 53}}),

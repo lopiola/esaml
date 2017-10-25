@@ -42,12 +42,12 @@
     redirect_login_location = undefined :: undefined | string(),
     post_login_location = undefined :: undefined | string(),
     logout_location :: string() | undefined,
-    name_format = unknown :: esaml:name_format()
+    name_format = unknown :: esaml:name_format(),
+    trusted_fingerprints = [] :: [binary()]
 }).
 
 -record(esaml_idp, {
     metadata = undefined :: undefined | #esaml_idp_metadata{},
-    trusted_fingerprints = [] :: any | [string() | binary()],
     preferred_sso_binding = http_redirect :: http_redirect | http_post,
     encrypts_assertions = true :: boolean(),
     signs_assertions = true :: boolean(),

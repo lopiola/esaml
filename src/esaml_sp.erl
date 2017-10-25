@@ -216,10 +216,10 @@ validate_assertion(Xml, SP = #esaml_sp{}, IdP = #esaml_idp{}) ->
         {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'}],
 
     #esaml_idp{
-        trusted_fingerprints = IdPTrustedFPs,
+        metadata = #esaml_idp_metadata{trusted_fingerprints = IdPTrustedFPs},
         % TODO use this option to decide if we should look for Assertion or EncryptedAssertion
         % and log sensible error when it is not present.
-        encrypts_assertions = IdpEncryptsAssertions,
+        encrypts_assertions = _IdpEncryptsAssertions,
         signs_assertions = IdPSignsAssertions,
         signs_envelopes = IDPSignsEnvelopes
     } = IdP,

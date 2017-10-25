@@ -201,8 +201,7 @@ verify(Element, Fingerprints) ->
 
         [#xmlText{value = Cert64}] = xmerl_xpath:string("ds:Signature//ds:X509Certificate/text()", Element, [{namespace, DsNs}]),
         CertBin = base64:decode(Cert64),
-        CertHash = crypto:hash(sha, CertBin),
-        CertHash2 = crypto:hash(sha256, CertBin),
+        CertHash256 = crypto:hash(sha256, CertBin),
 
         Cert = public_key:pkix_decode_cert(CertBin, plain),
         KeyBin = case Cert#'Certificate'.tbsCertificate#'TBSCertificate'.subjectPublicKeyInfo#'SubjectPublicKeyInfo'.subjectPublicKey of
@@ -217,7 +216,7 @@ verify(Element, Fingerprints) ->
                     any ->
                         ok;
                     _ ->
-                        case lists:any(fun(X) -> lists:member(X, Fingerprints) end, [CertHash, {sha,CertHash}, {sha256,CertHash2}]) of
+                        case lists:member(CertHash256, Fingerprints) of
                             true ->
                                 ok;
                             false ->

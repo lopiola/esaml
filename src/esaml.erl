@@ -139,7 +139,7 @@ common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.10") -> eduPersonTargetedID;
 common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.13") -> eduPersonUniqueId;
 common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.6") -> eduPersonPrincipalName;
 common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.1") -> eduPersonAffiliation;
-common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.9") -> eduPersonScopedAffiliation;
+common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.9") ->    eduPersonScopedAffiliation;
 common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.7") -> eduPersonEntitlement;
 common_attrib_map("urn:oid:1.3.6.1.4.1.25178.1.2.9") -> schacHomeOrganization;
 common_attrib_map("urn:oid:2.5.4.20") -> telephoneNumber;
@@ -177,10 +177,18 @@ decode_idp_metadata(Xml) ->
     ], #esaml_idp_metadata{}),
     % Make sure SSO URL for at least one binding was resolved
     case Result of
-        #esaml_idp_metadata{redirect_login_location = undefined, post_login_location = undefined} ->
+        {ok, #esaml_idp_metadata{redirect_login_location = undefined, post_login_location = undefined}} ->
             {error, missing_sso_location};
-        _ ->
-            Result
+        {ok, Metadata} ->
+            % Resolve fingerprints of certificates used by IdP
+            Certificates = xmerl_xpath:string("//*/ds:X509Certificate/text()", Xml, [{namespace, Ns}]),
+            FingerPrints = lists:map(
+                fun(#xmlText{value = Value}) ->
+                    crypto:hash(sha256, base64:decode(Value))
+                end, Certificates),
+            {ok, Metadata#esaml_idp_metadata{trusted_fingerprints = FingerPrints}};
+        Other ->
+            Other
     end.
 
 
