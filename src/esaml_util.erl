@@ -209,7 +209,7 @@ check_dupe_ets(A, Digest) ->
 %% @doc Returns a unique xsd:ID string suitable for SAML use.
 -spec unique_id() -> string().
 unique_id() ->
-    <<R:64>> = crypto:rand_bytes(8),
+    <<R:64>> = crypto:strong_rand_bytes(8),
     T = try
         erlang:system_time() % needs ERTS-7.0
     catch
