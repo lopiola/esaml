@@ -139,7 +139,7 @@ common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.10") -> eduPersonTargetedID;
 common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.13") -> eduPersonUniqueId;
 common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.6") -> eduPersonPrincipalName;
 common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.1") -> eduPersonAffiliation;
-common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.9") ->    eduPersonScopedAffiliation;
+common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.9") -> eduPersonScopedAffiliation;
 common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.7") -> eduPersonEntitlement;
 common_attrib_map("urn:oid:1.3.6.1.4.1.25178.1.2.9") -> schacHomeOrganization;
 common_attrib_map("urn:oid:2.5.4.20") -> telephoneNumber;
@@ -506,7 +506,8 @@ get_sp_metadata(#esaml_sp{} = EsamlSP) ->
         tech = #esaml_contact{
             name = TechName, email = TechEmail
         },
-        certificate = CertBin,
+        certificate = Certificate,
+        rollover_new_certificate = RolloverNewCertificate,
         cert_chain = CertChain,
         sign_requests = SignReq,
         want_assertions_signed = SignAss,
@@ -532,36 +533,12 @@ get_sp_metadata(#esaml_sp{} = EsamlSP) ->
         ]
     },
 
-    KeyDesc = case CertBin of
-        undefined -> [];
-        C when is_binary(C) ->
-            [
-                #xmlElement{name = 'md:KeyDescriptor',
-                    attributes = [#xmlAttribute{name = 'use', value = "signing"}],
-                    content = [#xmlElement{name = 'dsig:KeyInfo',
-                        content = [#xmlElement{name = 'dsig:X509Data',
-                            content =
-                            [#xmlElement{name = 'dsig:X509Certificate',
-                                content = [#xmlText{value = base64:encode_to_string(CertBin)}]} |
-                                [#xmlElement{name = 'dsig:X509Certificate',
-                                    content = [#xmlText{value = base64:encode_to_string(CertChainBin)}]} || CertChainBin <- CertChain]]}]}]},
-                #xmlElement{name = 'md:KeyDescriptor',
-                    attributes = [#xmlAttribute{name = 'use', value = "encryption"}],
-                    content = [#xmlElement{name = 'dsig:KeyInfo',
-                        content = [#xmlElement{name = 'dsig:X509Data',
-                            content =
-                            [#xmlElement{name = 'dsig:X509Certificate',
-                                content = [#xmlText{value = base64:encode_to_string(CertBin)}]} |
-                                [#xmlElement{name = 'dsig:X509Certificate',
-                                    content = [#xmlText{value = base64:encode_to_string(CertChainBin)}]} || CertChainBin <- CertChain]]}]}]}
-            ]
-    end,
-
     SpSso0 = #xmlElement{name = 'md:SPSSODescriptor',
         attributes = [#xmlAttribute{name = 'protocolSupportEnumeration', value = "urn:oasis:names:tc:SAML:2.0:protocol"},
             #xmlAttribute{name = 'AuthnRequestsSigned', value = atom_to_list(SignReq)},
             #xmlAttribute{name = 'WantAssertionsSigned', value = atom_to_list(SignAss)}],
-        content = KeyDesc ++ [
+        content = key_descriptor_object(Certificate, CertChain) ++
+            key_descriptor_object(RolloverNewCertificate, CertChain) ++ [
             #xmlElement{name = 'md:AssertionConsumerService',
                 attributes = [#xmlAttribute{name = 'isDefault', value = "true"},
                     #xmlAttribute{name = 'index', value = "0"},
@@ -602,6 +579,20 @@ get_sp_metadata(#esaml_sp{} = EsamlSP) ->
             MdContact
         ]
     }).
+
+
+key_descriptor_object(undefined, _) ->
+    [];
+key_descriptor_object(Certificate, CertChain) when is_binary(Certificate) -> [
+    #xmlElement{name = 'md:KeyDescriptor',
+        content = [#xmlElement{name = 'dsig:KeyInfo',
+            content = [#xmlElement{name = 'dsig:X509Data',
+                content =
+                [#xmlElement{name = 'dsig:X509Certificate',
+                    content = [#xmlText{value = base64:encode_to_string(Certificate)}]} |
+                    [#xmlElement{name = 'dsig:X509Certificate',
+                        content = [#xmlText{value = base64:encode_to_string(CertChainBin)}]} || CertChainBin <- CertChain]]}]}]}
+].
 
 
 -ifdef(TEST).
