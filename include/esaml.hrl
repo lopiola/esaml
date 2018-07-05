@@ -25,6 +25,8 @@
     tech = #esaml_contact{} :: esaml:contact(),
     key :: #'RSAPrivateKey'{} | undefined,
     certificate :: binary() | undefined,
+    rollover_new_key :: #'RSAPrivateKey'{} | undefined,
+    rollover_new_certificate :: binary() | undefined,
     cert_chain = [] :: [binary()],
     sign_metadata = false :: boolean(),
     sign_requests = false :: boolean(),
