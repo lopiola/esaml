@@ -95,7 +95,7 @@ handle(<<"POST">>, <<"consume">>, Req, S = #state{sp = SP}) ->
         {ok, Assertion, RelayState, Req2} ->
             NameID = Assertion#esaml_assertion.subject#esaml_subject.name,
             Attrs = Assertion#esaml_assertion.attributes,
-            Uid = proplists:get_value(uid, Attrs),
+            Uid = proplists:get_value("uid", Attrs, "unknown"),
 
             CookieID = gen_cookie_id(),
             ets:insert(sp_cookies, {CookieID, NameID, Uid}),

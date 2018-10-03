@@ -54,8 +54,7 @@
     encrypts_assertions = true :: boolean(),
     signs_assertions = true :: boolean(),
     signs_envelopes = true :: boolean(),
-    signs_logout_requests = true :: boolean(),
-    attribute_mapping = #{} :: maps:map()
+    signs_logout_requests = true :: boolean()
 }).
 
 -record(esaml_authnreq, {
