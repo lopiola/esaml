@@ -93,7 +93,7 @@ generate_metadata(#esaml_sp{} = SP) ->
 %% @doc Validate and parse a LogoutRequest element
 -spec validate_logout_request(xml(), esaml:sp()) ->
     {ok, esaml:logoutreq()} | {error, Reason :: term()}.
-validate_logout_request(Xml, SP = #esaml_sp{}) ->
+validate_logout_request(Xml, #esaml_sp{}) ->
     Ns = [{"samlp", 'urn:oasis:names:tc:SAML:2.0:protocol'},
         {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'}],
 
@@ -134,7 +134,7 @@ validate_logout_request(Xml, SP = #esaml_sp{}) ->
 %% @doc Validate and parse a LogoutResponse element
 -spec validate_logout_response(xml(), esaml:sp()) ->
     {ok, esaml:logoutresp()} | {error, Reason :: term()}.
-validate_logout_response(Xml, SP = #esaml_sp{}) ->
+validate_logout_response(Xml, #esaml_sp{}) ->
     Ns = [{"samlp", 'urn:oasis:names:tc:SAML:2.0:protocol'},
         {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'},
         {"ds", 'http://www.w3.org/2000/09/xmldsig#'}],
@@ -189,9 +189,6 @@ get_encrypted_assertion(Xml, #esaml_sp{key = PrivKey}) ->
         "http://www.w3.org/2001/04/xmlenc#aes256-cbc"
     ]),
 
-    % TODO verify if the same as our cert
-%%    EncCert = get_text(xmerl_xpath:string("/samlp:Response/saml:EncryptedAssertion/xenc:EncryptedData/ds:KeyInfo/xenc:EncryptedKey/ds:KeyInfo/ds:X509Data/ds:X509Certificate", Xml, [{namespace, Ns}])),
-
     KeyCipherValueB64 = get_text(xmerl_xpath:string("/samlp:Response/saml:EncryptedAssertion/xenc:EncryptedData/ds:KeyInfo/xenc:EncryptedKey/xenc:CipherData/xenc:CipherValue", Xml, [{namespace, Ns}])),
     KeyCipherValue = base64:decode(KeyCipherValueB64),
 
@@ -213,17 +210,16 @@ get_encrypted_assertion(Xml, #esaml_sp{key = PrivKey}) ->
     {ok, esaml:assertion()} | {error, Reason :: term()}.
 validate_assertion(Xml, SP = #esaml_sp{}, IdP = #esaml_idp{}) ->
     Ns = [{"samlp", 'urn:oasis:names:tc:SAML:2.0:protocol'},
-        {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'}],
+        {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'},
+        {"ds", 'http://www.w3.org/2000/09/xmldsig#'}],
 
     #esaml_idp{
-        metadata = #esaml_idp_metadata{trusted_fingerprints = IdPTrustedFPs},
-        % TODO use this option to decide if we should look for Assertion or EncryptedAssertion
-        % and log sensible error when it is not present.
-        encrypts_assertions = _IdpEncryptsAssertions,
-        signs_assertions = IdPSignsAssertions,
-        signs_envelopes = IDPSignsEnvelopes
+        metadata = #esaml_idp_metadata{trusted_fingerprints = IdPTrustedFPs}
     } = IdP,
 
+    % The below functions return {Verified, Acc}, where Verified means if the
+    % assertion was encrypted / signed in any way. If all the checks yield a
+    % false result, the assertion is discarded with {error, insufficient_security}.
     esaml_util:threaduntil([
         fun(X) ->
             case xmerl_xpath:string("/samlp:Response/saml:Assertion", X, [{namespace, Ns}]) of
@@ -233,35 +229,42 @@ validate_assertion(Xml, SP = #esaml_sp{}, IdP = #esaml_idp{}) ->
                             {error, bad_assertion};
                         _ ->
                             % TODO maybe pass just the EncryptedAssertion node
-                            get_encrypted_assertion(Xml, SP)
+                            {true, get_encrypted_assertion(Xml, SP)}
                     end;
-                [A] ->
-                    A
+                [Assertion] ->
+                    {false, Assertion}
             end
         end,
-        fun(A) ->
-            if IDPSignsEnvelopes ->
-                case xmerl_dsig:verify(Xml, IdPTrustedFPs) of
-                    ok -> A;
-                    OuterError -> {error, {envelope, OuterError}}
-                end;
-                true -> A
+        fun({Verified, Assertion}) ->
+            case xmerl_xpath:string("ds:Signature", Xml) of
+                [] ->
+                    {Verified, Assertion};
+                _ ->
+                    case xmerl_dsig:verify(Xml, IdPTrustedFPs) of
+                        ok -> {true, Assertion};
+                        OuterError -> {error, {envelope, OuterError}}
+                    end
             end
         end,
-        fun(A) ->
-            if IdPSignsAssertions ->
-                case xmerl_dsig:verify(A, IdPTrustedFPs) of
-                    ok -> A;
-                    InnerError -> {error, {assertion, InnerError}}
-                end;
-                true -> A
+        fun({Verified, Assertion}) ->
+            case xmerl_xpath:string("ds:Signature", Assertion) of
+                [] ->
+                    {Verified, Assertion};
+                _ ->
+                    case xmerl_dsig:verify(Xml, IdPTrustedFPs) of
+                        ok -> {true, Assertion};
+                        InnerError -> {error, {assertion, InnerError}}
+                    end
             end
         end,
-        fun(A) ->
-            case esaml:validate_assertion(A, SP#esaml_sp.consume_uri, SP#esaml_sp.entity_id) of
-                {ok, AR} -> AR;
-                {error, Reason} -> {error, Reason}
-            end
+        fun
+            ({false = _Verified, _Assertion}) ->
+                {error, insufficient_security};
+            ({true = _Verified, Assertion}) ->
+                case esaml:validate_assertion(Assertion, SP#esaml_sp.consume_uri, SP#esaml_sp.entity_id) of
+                    {ok, AR} -> AR;
+                    {error, Reason} -> {error, Reason}
+                end
         end
     ], Xml).
 

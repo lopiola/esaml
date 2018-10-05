@@ -51,9 +51,6 @@
 -record(esaml_idp, {
     metadata = undefined :: undefined | #esaml_idp_metadata{},
     preferred_sso_binding = http_redirect :: http_redirect | http_post,
-    encrypts_assertions = true :: boolean(),
-    signs_assertions = true :: boolean(),
-    signs_envelopes = true :: boolean(),
     signs_logout_requests = true :: boolean()
 }).
 
