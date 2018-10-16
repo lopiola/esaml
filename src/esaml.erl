@@ -128,28 +128,27 @@ logout_reason_map(S) when is_list(S) -> unknown.
 rev_logout_reason_map(user) -> "urn:oasis:names:tc:SAML:2.0:logout:user";
 rev_logout_reason_map(admin) -> "urn:oasis:names:tc:SAML:2.0:logout:admin".
 
--spec common_attrib_map(string()) -> atom().
-common_attrib_map("urn:oid:0.9.2342.19200300.100.1.1") -> uid;
-common_attrib_map("urn:oid:2.16.840.1.113730.3.1.241") -> displayName;
-common_attrib_map("urn:oid:2.5.4.42") -> givenName;
-common_attrib_map("urn:oid:2.5.4.3") -> commonName;
-common_attrib_map("urn:oid:2.5.4.4") -> surName;
-common_attrib_map("urn:oid:0.9.2342.19200300.100.1.3") -> mail;
-common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.10") -> eduPersonTargetedID;
-common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.13") -> eduPersonUniqueId;
-common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.6") -> eduPersonPrincipalName;
-common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.1") -> eduPersonAffiliation;
-common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.9") -> eduPersonScopedAffiliation;
-common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.7") -> eduPersonEntitlement;
-common_attrib_map("urn:oid:1.3.6.1.4.1.25178.1.2.9") -> schacHomeOrganization;
-common_attrib_map("urn:oid:2.5.4.20") -> telephoneNumber;
-common_attrib_map("urn:oid:2.5.4.10") -> organizationName;
-common_attrib_map("urn:oid:2.5.4.11") -> organizationalUnitName;
-common_attrib_map("urn:oid:2.16.840.1.113730.3.1.3") -> employeeNumber;
-common_attrib_map("urn:oid:2.16.840.1.113730.3.1.4") -> employeeType;
-common_attrib_map(Uri = "http://" ++ _) ->
-    list_to_atom(lists:last(string:tokens(Uri, "/")));
-common_attrib_map(Other) when is_list(Other) -> list_to_atom(Other).
+-spec common_attrib_map(string()) -> string().
+common_attrib_map("urn:oid:0.9.2342.19200300.100.1.1") -> "uid";
+common_attrib_map("urn:oid:2.16.840.1.113730.3.1.241") -> "displayName";
+common_attrib_map("urn:oid:2.5.4.42") -> "givenName";
+common_attrib_map("urn:oid:2.5.4.3") -> "commonName";
+common_attrib_map("urn:oid:2.5.4.4") -> "surName";
+common_attrib_map("urn:oid:0.9.2342.19200300.100.1.3") -> "mail";
+common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.10") -> "eduPersonTargetedID";
+common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.13") -> "eduPersonUniqueID";
+common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.6") -> "eduPersonPrincipalName";
+common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.1") -> "eduPersonAffiliation";
+common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.9") -> "eduPersonScopedAffiliation";
+common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.7") -> "eduPersonEntitlement";
+common_attrib_map("urn:oid:1.3.6.1.4.1.25178.1.2.9") -> "schacHomeOrganization";
+common_attrib_map("urn:oid:2.5.4.20") -> "telephoneNumber";
+common_attrib_map("urn:oid:2.5.4.10") -> "organizationName";
+common_attrib_map("urn:oid:2.5.4.11") -> "organizationalUnitName";
+common_attrib_map("urn:oid:2.16.840.1.113730.3.1.3") -> "employeeNumber";
+common_attrib_map("urn:oid:2.16.840.1.113730.3.1.4") -> "employeeType";
+% Custom attr or an URI
+common_attrib_map(Other) -> Other.
 
 -include("xmerl_xpath_macros.hrl").
 
@@ -305,7 +304,7 @@ decode_assertion_conditions(Xml) ->
         end
     ], []).
 
--spec decode_assertion_attributes(#xmlElement{}) -> {ok, [{atom(), string()}]} | {error, term()}.
+-spec decode_assertion_attributes(#xmlElement{}) -> {ok, [{string(), string()}]} | {error, term()}.
 decode_assertion_attributes(Xml) ->
     Ns = [{"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'}],
     Attrs = xmerl_xpath:string("/saml:AttributeStatement/saml:Attribute", Xml, [{namespace, Ns}]),
