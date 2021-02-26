@@ -224,12 +224,16 @@ unique_id() ->
 -spec base64_decode(binary() | iolist()) -> binary().
 base64_decode(IOList) when not is_binary(IOList) ->
     base64_decode(iolist_to_binary(IOList));
-base64_decode(Binary) when byte_size(Binary) rem 4 == 3 ->
-    base64:decode(<<Binary/binary, "=">>);
-base64_decode(Binary) when byte_size(Binary) rem 4 == 2 ->
-    base64:decode(<<Binary/binary, "==">>);
 base64_decode(Binary) ->
-    base64:decode(Binary).
+    Trimmed = string:trim(Binary),
+    if
+        byte_size(Trimmed) rem 4 == 3 ->
+            base64:decode(<<Trimmed/binary, "=">>);
+        byte_size(Trimmed) rem 4 == 2 ->
+            base64:decode(<<Trimmed/binary, "==">>);
+        true ->
+            base64:decode(Trimmed)
+    end.
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
