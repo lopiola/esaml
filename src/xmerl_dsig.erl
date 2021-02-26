@@ -186,7 +186,7 @@ verify(Element, Fingerprints) ->
     CanonSha = crypto:hash(HashFunction, CanonXmlUtf8),
 
     [#xmlText{value = Sha64}] = xmerl_xpath:string("ds:Signature/ds:SignedInfo/ds:Reference/ds:DigestValue/text()", Element, [{namespace, DsNs}]),
-    CanonSha2 = base64:decode(Sha64),
+    CanonSha2 = esaml_util:base64_decode(Sha64),
 
     if not (CanonSha =:= CanonSha2) ->
         {error, {bad_digest, {received, Sha64}, {calculated, base64:encode(CanonSha)}}};
@@ -197,10 +197,10 @@ verify(Element, Fingerprints) ->
         Data = list_to_binary(SigInfoCanon),
 
         [#xmlText{value = Sig64}] = xmerl_xpath:string("ds:Signature//ds:SignatureValue/text()", Element, [{namespace, DsNs}]),
-        Sig = base64:decode(Sig64),
+        Sig = esaml_util:base64_decode(Sig64),
 
         [#xmlText{value = Cert64}] = xmerl_xpath:string("ds:Signature//ds:X509Certificate/text()", Element, [{namespace, DsNs}]),
-        CertBin = base64:decode(Cert64),
+        CertBin = esaml_util:base64_decode(Cert64),
         CertHash256 = crypto:hash(sha256, CertBin),
 
         Cert = public_key:pkix_decode_cert(CertBin, plain),

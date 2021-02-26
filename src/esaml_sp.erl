@@ -190,10 +190,10 @@ get_encrypted_assertion(Xml, #esaml_sp{key = PrivKey}) ->
     ]),
 
     KeyCipherValueB64 = get_text(xmerl_xpath:string("/samlp:Response/saml:EncryptedAssertion/xenc:EncryptedData/ds:KeyInfo/xenc:EncryptedKey/xenc:CipherData/xenc:CipherValue", Xml, [{namespace, Ns}])),
-    KeyCipherValue = base64:decode(KeyCipherValueB64),
+    KeyCipherValue = esaml_util:base64_decode(KeyCipherValueB64),
 
     EncAssCipherTextB64 = get_text(xmerl_xpath:string("/samlp:Response/saml:EncryptedAssertion/xenc:EncryptedData/xenc:CipherData/xenc:CipherValue", Xml, [{namespace, Ns}])),
-    EncAssCipherText = base64:decode(EncAssCipherTextB64),
+    EncAssCipherText = esaml_util:base64_decode(EncAssCipherTextB64),
 
     AESKey = public_key:decrypt_private(KeyCipherValue, PrivKey, [{rsa_pad, rsa_pkcs1_oaep_padding}]),
 
