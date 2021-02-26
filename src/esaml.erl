@@ -128,27 +128,27 @@ logout_reason_map(S) when is_list(S) -> unknown.
 rev_logout_reason_map(user) -> "urn:oasis:names:tc:SAML:2.0:logout:user";
 rev_logout_reason_map(admin) -> "urn:oasis:names:tc:SAML:2.0:logout:admin".
 
--spec common_attrib_map(string()) -> atom().
-common_attrib_map("urn:oid:0.9.2342.19200300.100.1.1") -> uid;
-common_attrib_map("urn:oid:2.16.840.1.113730.3.1.241") -> displayName;
-common_attrib_map("urn:oid:2.5.4.42") -> givenName;
-common_attrib_map("urn:oid:2.5.4.3") -> commonName;
-common_attrib_map("urn:oid:2.5.4.4") -> surName;
-common_attrib_map("urn:oid:0.9.2342.19200300.100.1.3") -> mail;
-common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.10") -> eduPersonTargetedID;
-common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.13") -> eduPersonUniqueId;
-common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.6") -> eduPersonPrincipalName;
-common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.9") -> eduPersonScopedAffiliation;
-common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.7") -> eduPersonEntitlement;
-common_attrib_map("urn:oid:1.3.6.1.4.1.25178.1.2.9") -> schacHomeOrganization;
-common_attrib_map("urn:oid:2.5.4.20") -> telephoneNumber;
-common_attrib_map("urn:oid:2.5.4.10") -> organizationName;
-common_attrib_map("urn:oid:2.5.4.11") -> organizationalUnitName;
-common_attrib_map("urn:oid:2.16.840.1.113730.3.1.3") -> employeeNumber;
-common_attrib_map("urn:oid:2.16.840.1.113730.3.1.4") -> employeeType;
-common_attrib_map(Uri = "http://" ++ _) ->
-    list_to_atom(lists:last(string:tokens(Uri, "/")));
-common_attrib_map(Other) when is_list(Other) -> list_to_atom(Other).
+-spec common_attrib_map(string()) -> string().
+common_attrib_map("urn:oid:0.9.2342.19200300.100.1.1") -> "uid";
+common_attrib_map("urn:oid:2.16.840.1.113730.3.1.241") -> "displayName";
+common_attrib_map("urn:oid:2.5.4.42") -> "givenName";
+common_attrib_map("urn:oid:2.5.4.3") -> "commonName";
+common_attrib_map("urn:oid:2.5.4.4") -> "surName";
+common_attrib_map("urn:oid:0.9.2342.19200300.100.1.3") -> "mail";
+common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.10") -> "eduPersonTargetedID";
+common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.13") -> "eduPersonUniqueID";
+common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.6") -> "eduPersonPrincipalName";
+common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.1") -> "eduPersonAffiliation";
+common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.9") -> "eduPersonScopedAffiliation";
+common_attrib_map("urn:oid:1.3.6.1.4.1.5923.1.1.1.7") -> "eduPersonEntitlement";
+common_attrib_map("urn:oid:1.3.6.1.4.1.25178.1.2.9") -> "schacHomeOrganization";
+common_attrib_map("urn:oid:2.5.4.20") -> "telephoneNumber";
+common_attrib_map("urn:oid:2.5.4.10") -> "organizationName";
+common_attrib_map("urn:oid:2.5.4.11") -> "organizationalUnitName";
+common_attrib_map("urn:oid:2.16.840.1.113730.3.1.3") -> "employeeNumber";
+common_attrib_map("urn:oid:2.16.840.1.113730.3.1.4") -> "employeeType";
+% Custom attr or an URI
+common_attrib_map(Other) -> Other.
 
 -include("xmerl_xpath_macros.hrl").
 
@@ -159,11 +159,12 @@ decode_idp_metadata(Xml) ->
         {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'},
         {"md", 'urn:oasis:names:tc:SAML:2.0:metadata'},
         {"ds", 'http://www.w3.org/2000/09/xmldsig#'}],
-    esaml_util:threaduntil([
+    Result = esaml_util:threaduntil([
         ?xpath_attr_required("/md:EntityDescriptor/@entityID", esaml_idp_metadata, entity_id, bad_entity),
-        % TODO enable support for HTTP-POST binding
-        ?xpath_attr_required("/md:EntityDescriptor/md:IDPSSODescriptor/md:SingleSignOnService[@Binding='urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect']/@Location",
-            esaml_idp_metadata, login_location, missing_sso_location),
+        ?xpath_attr("/md:EntityDescriptor/md:IDPSSODescriptor/md:SingleSignOnService[@Binding='urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect']/@Location",
+            esaml_idp_metadata, redirect_login_location),
+        ?xpath_attr("/md:EntityDescriptor/md:IDPSSODescriptor/md:SingleSignOnService[@Binding='urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST']/@Location",
+            esaml_idp_metadata, post_login_location),
         ?xpath_attr("/md:EntityDescriptor/md:IDPSSODescriptor/md:SingleLogoutService[@Binding='urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST']/@Location",
             esaml_idp_metadata, logout_location),
         ?xpath_text("/md:EntityDescriptor/md:IDPSSODescriptor/md:NameIDFormat/text()",
@@ -172,7 +173,23 @@ decode_idp_metadata(Xml) ->
             base64:decode(list_to_binary(X)) end),
         ?xpath_recurse("/md:EntityDescriptor/md:ContactPerson[@contactType='technical']", esaml_idp_metadata, tech, decode_contact),
         ?xpath_recurse("/md:EntityDescriptor/md:Organization", esaml_idp_metadata, org, decode_org)
-    ], #esaml_idp_metadata{}).
+    ], #esaml_idp_metadata{}),
+    % Make sure SSO URL for at least one binding was resolved
+    case Result of
+        {ok, #esaml_idp_metadata{redirect_login_location = undefined, post_login_location = undefined}} ->
+            {error, missing_sso_location};
+        {ok, Metadata} ->
+            % Resolve fingerprints of certificates used by IdP
+            Certificates = xmerl_xpath:string("//*/ds:X509Certificate/text()", Xml, [{namespace, Ns}]),
+            FingerPrints = lists:map(
+                fun(#xmlText{value = Value}) ->
+                    crypto:hash(sha256, base64:decode(Value))
+                end, Certificates),
+            {ok, Metadata#esaml_idp_metadata{trusted_fingerprints = FingerPrints}};
+        Other ->
+            Other
+    end.
+
 
 %% @private
 -spec decode_org(Xml :: #xmlElement{}) -> {ok, #esaml_org{}} | {error, term()}.
@@ -181,7 +198,10 @@ decode_org(Xml) ->
         {"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'},
         {"md", 'urn:oasis:names:tc:SAML:2.0:metadata'}],
     esaml_util:threaduntil([
-        ?xpath_text_required("/md:Organization/md:OrganizationName/text()", esaml_org, name, bad_org),
+        ?xpath_text_required_one_of(
+            "/md:Organization/md:OrganizationName/text()",
+            "/md:Organization/md:OrganizationName[@xml:lang='en']/text()",
+            esaml_org, name, bad_org),
         ?xpath_text("/md:Organization/md:OrganizationDisplayName/text()", esaml_org, displayname),
         ?xpath_text("/md:Organization/md:OrganizationURL/text()", esaml_org, url)
     ], #esaml_org{}).
@@ -284,7 +304,7 @@ decode_assertion_conditions(Xml) ->
         end
     ], []).
 
--spec decode_assertion_attributes(#xmlElement{}) -> {ok, [{atom(), string()}]} | {error, term()}.
+-spec decode_assertion_attributes(#xmlElement{}) -> {ok, [{string(), string()}]} | {error, term()}.
 decode_assertion_attributes(Xml) ->
     Ns = [{"saml", 'urn:oasis:names:tc:SAML:2.0:assertion'}],
     Attrs = xmerl_xpath:string("/saml:AttributeStatement/saml:Attribute", Xml, [{namespace, Ns}]),
@@ -485,7 +505,8 @@ get_sp_metadata(#esaml_sp{} = EsamlSP) ->
         tech = #esaml_contact{
             name = TechName, email = TechEmail
         },
-        certificate = CertBin,
+        certificate = Certificate,
+        rollover_new_certificate = RolloverNewCertificate,
         cert_chain = CertChain,
         sign_requests = SignReq,
         want_assertions_signed = SignAss,
@@ -511,36 +532,12 @@ get_sp_metadata(#esaml_sp{} = EsamlSP) ->
         ]
     },
 
-    KeyDesc = case CertBin of
-        undefined -> [];
-        C when is_binary(C) ->
-            [
-                #xmlElement{name = 'md:KeyDescriptor',
-                    attributes = [#xmlAttribute{name = 'use', value = "signing"}],
-                    content = [#xmlElement{name = 'dsig:KeyInfo',
-                        content = [#xmlElement{name = 'dsig:X509Data',
-                            content =
-                            [#xmlElement{name = 'dsig:X509Certificate',
-                                content = [#xmlText{value = base64:encode_to_string(CertBin)}]} |
-                                [#xmlElement{name = 'dsig:X509Certificate',
-                                    content = [#xmlText{value = base64:encode_to_string(CertChainBin)}]} || CertChainBin <- CertChain]]}]}]},
-                #xmlElement{name = 'md:KeyDescriptor',
-                    attributes = [#xmlAttribute{name = 'use', value = "encryption"}],
-                    content = [#xmlElement{name = 'dsig:KeyInfo',
-                        content = [#xmlElement{name = 'dsig:X509Data',
-                            content =
-                            [#xmlElement{name = 'dsig:X509Certificate',
-                                content = [#xmlText{value = base64:encode_to_string(CertBin)}]} |
-                                [#xmlElement{name = 'dsig:X509Certificate',
-                                    content = [#xmlText{value = base64:encode_to_string(CertChainBin)}]} || CertChainBin <- CertChain]]}]}]}
-            ]
-    end,
-
     SpSso0 = #xmlElement{name = 'md:SPSSODescriptor',
         attributes = [#xmlAttribute{name = 'protocolSupportEnumeration', value = "urn:oasis:names:tc:SAML:2.0:protocol"},
             #xmlAttribute{name = 'AuthnRequestsSigned', value = atom_to_list(SignReq)},
             #xmlAttribute{name = 'WantAssertionsSigned', value = atom_to_list(SignAss)}],
-        content = KeyDesc ++ [
+        content = key_descriptor_object(Certificate, CertChain) ++
+            key_descriptor_object(RolloverNewCertificate, CertChain) ++ [
             #xmlElement{name = 'md:AssertionConsumerService',
                 attributes = [#xmlAttribute{name = 'isDefault', value = "true"},
                     #xmlAttribute{name = 'index', value = "0"},
@@ -581,6 +578,20 @@ get_sp_metadata(#esaml_sp{} = EsamlSP) ->
             MdContact
         ]
     }).
+
+
+key_descriptor_object(undefined, _) ->
+    [];
+key_descriptor_object(Certificate, CertChain) when is_binary(Certificate) -> [
+    #xmlElement{name = 'md:KeyDescriptor',
+        content = [#xmlElement{name = 'dsig:KeyInfo',
+            content = [#xmlElement{name = 'dsig:X509Data',
+                content =
+                [#xmlElement{name = 'dsig:X509Certificate',
+                    content = [#xmlText{value = base64:encode_to_string(Certificate)}]} |
+                    [#xmlElement{name = 'dsig:X509Certificate',
+                        content = [#xmlText{value = base64:encode_to_string(CertChainBin)}]} || CertChainBin <- CertChain]]}]}]}
+].
 
 
 -ifdef(TEST).

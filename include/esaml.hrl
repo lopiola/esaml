@@ -25,6 +25,8 @@
     tech = #esaml_contact{} :: esaml:contact(),
     key :: #'RSAPrivateKey'{} | undefined,
     certificate :: binary() | undefined,
+    rollover_new_key :: #'RSAPrivateKey'{} | undefined,
+    rollover_new_certificate :: binary() | undefined,
     cert_chain = [] :: [binary()],
     sign_metadata = false :: boolean(),
     sign_requests = false :: boolean(),
@@ -39,19 +41,17 @@
     signed_requests = true :: boolean(),
     certificate :: binary() | undefined,
     entity_id = "" :: string(),
-    login_location = "" :: string(),
+    redirect_login_location = undefined :: undefined | string(),
+    post_login_location = undefined :: undefined | string(),
     logout_location :: string() | undefined,
-    name_format = unknown :: esaml:name_format()
+    name_format = unknown :: esaml:name_format(),
+    trusted_fingerprints = [] :: [binary()]
 }).
 
 -record(esaml_idp, {
     metadata = undefined :: undefined | #esaml_idp_metadata{},
-    trusted_fingerprints = [] :: [string() | binary()],
-    encrypts_assertions = true :: boolean(),
-    signs_assertions = true :: boolean(),
-    signs_envelopes = true :: boolean(),
-    signs_logout_requests = true :: boolean(),
-    attribute_mapping = #{} :: maps:map()
+    preferred_sso_binding = http_redirect :: http_redirect | http_post,
+    signs_logout_requests = true :: boolean()
 }).
 
 -record(esaml_authnreq, {

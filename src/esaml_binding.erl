@@ -9,7 +9,12 @@
 %% @doc SAML HTTP binding handlers
 -module(esaml_binding).
 
--export([decode_response/2, encode_http_redirect/3, encode_http_post/3]).
+-export([
+    decode_response/2,
+    encode_http_redirect/3,
+    encode_http_post_form_data/2,
+    encode_http_post/3
+]).
 
 -include_lib("xmerl/include/xmerl.hrl").
 -define(deflate, <<"urn:oasis:names:tc:SAML:2.0:bindings:URL-Encoding:DEFLATE">>).
@@ -38,16 +43,16 @@ xml_payload_type(Xml) ->
 %% @doc Unpack and parse a SAMLResponse with given encoding
 -spec decode_response(SAMLEncoding :: binary(), SAMLResponse :: binary()) -> #xmlDocument{}.
 decode_response(?deflate, SAMLResponse) ->
-	XmlData = binary_to_list(zlib:unzip(base64:decode(SAMLResponse))),
-	{Xml, _} = xmerl_scan:string(XmlData, [{namespace_conformant, true}]),
+    XmlData = binary_to_list(zlib:unzip(base64:decode(SAMLResponse))),
+    {Xml, _} = xmerl_scan:string(XmlData, [{namespace_conformant, true}]),
     Xml;
 decode_response(_, SAMLResponse) ->
-	Data = base64:decode(SAMLResponse),
+    Data = base64:decode(SAMLResponse),
     XmlData = case (catch zlib:unzip(Data)) of
         {'EXIT', _} -> binary_to_list(Data);
         Bin -> binary_to_list(Bin)
     end,
-	{Xml, _} = xmerl_scan:string(XmlData, [{namespace_conformant, true}]),
+    {Xml, _} = xmerl_scan:string(XmlData, [{namespace_conformant, true}]),
     Xml.
 
 %% @doc Encode a SAMLRequest (or SAMLResponse) as an HTTP-REDIRECT binding
@@ -56,11 +61,27 @@ decode_response(_, SAMLResponse) ->
 -spec encode_http_redirect(IDPTarget :: uri(), SignedXml :: xml(), RelayState :: binary()) -> uri().
 encode_http_redirect(IdpTarget, SignedXml, RelayState) ->
     Type = xml_payload_type(SignedXml),
-	Req = lists:flatten(xmerl:export([SignedXml], xmerl_xml)),
+    Req = lists:flatten(xmerl:export([SignedXml], xmerl_xml)),
     Param = http_uri:encode(base64:encode_to_string(zlib:zip(Req))),
     RelayStateEsc = http_uri:encode(binary_to_list(RelayState)),
-    FirstParamDelimiter = case lists:member($?, IdpTarget) of true -> "&"; false -> "?" end,
+    FirstParamDelimiter = case lists:member($?, IdpTarget) of
+        true -> "&";
+        false -> "?"
+    end,
     iolist_to_binary([IdpTarget, FirstParamDelimiter, "SAMLEncoding=", ?deflate, "&", Type, "=", Param, "&RelayState=", RelayStateEsc]).
+
+
+%% @doc Encode a SAMLRequest as an HTTP-POST binding (returns request body).
+-spec encode_http_post_form_data(SignedXml :: xml(), RelayState :: binary()) ->
+    maps:map().
+encode_http_post_form_data(SignedXml, RelayState) ->
+    Type = xml_payload_type(SignedXml),
+    Req = base64:encode(lists:flatten(xmerl:export([SignedXml], xmerl_xml))),
+    #{
+        Type => Req,
+        <<"RelayState">> => RelayState
+    }.
+
 
 %% @doc Encode a SAMLRequest (or SAMLResponse) as an HTTP-POST binding
 %%
@@ -69,7 +90,7 @@ encode_http_redirect(IdpTarget, SignedXml, RelayState) ->
 -spec encode_http_post(IDPTarget :: uri(), SignedXml :: xml(), RelayState :: binary()) -> html_doc().
 encode_http_post(IdpTarget, SignedXml, RelayState) ->
     Type = xml_payload_type(SignedXml),
-	Req = lists:flatten(xmerl:export([SignedXml], xmerl_xml)),
+    Req = lists:flatten(xmerl:export([SignedXml], xmerl_xml)),
     generate_post_html(Type, IdpTarget, base64:encode(Req), RelayState).
 
 generate_post_html(Type, Dest, Req, RelayState) ->
@@ -83,9 +104,9 @@ generate_post_html(Type, Dest, Req, RelayState) ->
 <noscript>
 <p><strong>Note:</strong> Since your browser does not support JavaScript, you must press the button below once to proceed.</p>
 </noscript>
-<form method=\"post\" action=\"">>,Dest,<<"\">
-<input type=\"hidden\" name=\"">>,Type,<<"\" value=\"">>,Req,<<"\" />
-<input type=\"hidden\" name=\"RelayState\" value=\"">>,RelayState,<<"\" />
+<form method=\"post\" action=\"">>, Dest, <<"\">
+<input type=\"hidden\" name=\"">>, Type, <<"\" value=\"">>, Req, <<"\" />
+<input type=\"hidden\" name=\"RelayState\" value=\"">>, RelayState, <<"\" />
 <noscript><input type=\"submit\" value=\"Submit\" /></noscript>
 </form>
 </body>
