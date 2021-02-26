@@ -21,6 +21,7 @@
 -export([build_nsinfo/2]).
 -export([load_private_key/1, load_certificate_chain/1, load_certificate/1, load_metadata/1]).
 -export([unique_id/0]).
+-export([base64_decode/1]).
 
 -type fp_hash_type() :: sha | md5 | sha256 | sha384 | sha512.
 
@@ -218,6 +219,17 @@ unique_id() ->
             Mega * 1000000 * 1000000 + Sec * 1000000 + Micro
     end,
     lists:flatten(io_lib:format("_~.16b~.16b", [R, T])).
+
+%% @doc Decodes a base64 string, fixing the padding as needed
+-spec base64_decode(binary() | iolist()) -> binary().
+base64_decode(IOList) when not is_binary(IOList) ->
+    base64_decode(iolist_to_binary(IOList));
+base64_decode(Binary) when byte_size(Binary) rem 4 == 3 ->
+    base64:decode(<<Binary/binary, "=">>);
+base64_decode(Binary) when byte_size(Binary) rem 4 == 2 ->
+    base64:decode(<<Binary/binary, "==">>);
+base64_decode(Binary) ->
+    base64:decode(Binary).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").

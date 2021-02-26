@@ -43,11 +43,11 @@ xml_payload_type(Xml) ->
 %% @doc Unpack and parse a SAMLResponse with given encoding
 -spec decode_response(SAMLEncoding :: binary(), SAMLResponse :: binary()) -> #xmlDocument{}.
 decode_response(?deflate, SAMLResponse) ->
-    XmlData = binary_to_list(zlib:unzip(base64:decode(SAMLResponse))),
+    XmlData = binary_to_list(zlib:unzip(esaml_util:base64_decode(SAMLResponse))),
     {Xml, _} = xmerl_scan:string(XmlData, [{namespace_conformant, true}]),
     Xml;
 decode_response(_, SAMLResponse) ->
-    Data = base64:decode(SAMLResponse),
+    Data = esaml_util:base64_decode(SAMLResponse),
     XmlData = case (catch zlib:unzip(Data)) of
         {'EXIT', _} -> binary_to_list(Data);
         Bin -> binary_to_list(Bin)
