@@ -26,9 +26,9 @@
 -include_lib("public_key/include/public_key.hrl").
 
 -type xml_thing() :: #xmlDocument{} | #xmlElement{} | #xmlAttribute{} | #xmlPI{} | #xmlText{} | #xmlComment{}.
--type sig_method() :: rsa_sha1 | rsa_sha256.
+-type sig_method() :: sha | sha256.
 -type sig_method_uri() :: string().
--type fingerprint() :: binary() | {sha | sha256, binary()}.
+-type fingerprint() :: binary() | {sig_method(), binary()}.
 
 %% @doc Returns an xmlelement without any ds:Signature elements that are inside it.
 -spec strip(Element :: #xmlElement{} | #xmlDocument{}) -> #xmlElement{}.
@@ -53,24 +53,22 @@ strip(#xmlElement{content = Kids} = Elem) ->
 %%      the element with the signature added.
 %%
 %% Don't use "ds" as a namespace prefix in the envelope document, or things will go baaaad.
-%%
-%% Allows providing multiple certs to be embedded in the signature info, although one of them
-% must correspond to the private key.
--spec sign(#xmlElement{}, #'RSAPrivateKey'{}, CertOrCerts :: binary() | [binary()]) -> #xmlElement{}.
-sign(ElementIn, PrivateKey = #'RSAPrivateKey'{}, CertOrCerts) ->
-    try
-        % prefer the SHA256 algorithm, but there are cases when the given key is
-        % too short and unsuitable for SHA256 signing - in such case fall back to SHA-1
-        sign(ElementIn, PrivateKey, CertOrCerts, rsa_sha256)
-    catch error:badkey ->
-        sign(ElementIn, PrivateKey, CertOrCerts, rsa_sha1)
-    end.
+-spec sign(#xmlElement{}, #'RSAPrivateKey'{}, Certificate :: binary()) -> #xmlElement{}.
+sign(ElementIn, PrivateKey, Certificate) when is_binary(Certificate) ->
+    sign(ElementIn, PrivateKey, Certificate, [Certificate]).
 
--spec sign(#xmlElement{}, #'RSAPrivateKey'{}, CertOrCerts :: binary() | [binary()], sig_method() | sig_method_uri()) ->
-    #xmlElement{}.
-sign(ElementIn, PrivateKey = #'RSAPrivateKey'{}, CertOrCerts, SigMethod) when is_binary(CertOrCerts) ->
-    sign(ElementIn, PrivateKey, [CertOrCerts], SigMethod);
-sign(ElementIn, PrivateKey = #'RSAPrivateKey'{}, CertsBin = [Bin | _], SigMethod) when is_binary(Bin) ->
+%% Allows providing multiple certs to be embedded in the signature info, although one of them
+%% must correspond to the private key (be the same as the Certificate).
+-spec sign(#xmlElement{}, #'RSAPrivateKey'{}, Certificate :: binary(), CertsToEmbed :: [binary()]) -> #xmlElement{}.
+sign(ElementIn, PrivateKey = #'RSAPrivateKey'{}, Certificate, CertsToEmbed = [Bin | _]) when is_binary(Bin) ->
+    #'Certificate'{
+        signatureAlgorithm = #'AlgorithmIdentifier'{
+            algorithm = AlgorithmOid
+        }
+    } = public_key:pkix_decode_cert(Certificate, plain),
+    % use the same algorithm for signing as the one used in the certificate
+    {DigestType, rsa} = public_key:pkix_sign_types(AlgorithmOid),
+
     % get rid of any previous signature
     ElementStrip = strip(ElementIn),
 
@@ -89,7 +87,7 @@ sign(ElementIn, PrivateKey = #'RSAPrivateKey'{}, CertsBin = [Bin | _], SigMethod
             end
     end,
 
-    {HashFunction, DigestMethod, SignatureMethodAlgorithm} = signature_props(SigMethod),
+    {HashFunction, DigestMethod, SignatureMethodAlgorithm} = signature_props(DigestType),
 
     % first we need the digest, to generate our SignedInfo element
     CanonXml = xmerl_c14n:c14n(Element),
@@ -138,7 +136,7 @@ sign(ElementIn, PrivateKey = #'RSAPrivateKey'{}, CertsBin = [Bin | _], SigMethod
                 #xmlElement{name = 'ds:X509Data', content = lists:map(fun(CertBin) ->
                     Cert64 = base64:encode_to_string(CertBin),
                     #xmlElement{name = 'ds:X509Certificate', content = [#xmlText{value = Cert64}]}
-                end, CertsBin)}
+                end, CertsToEmbed)}
             ]}
         ]
     }),
@@ -263,16 +261,14 @@ verify_signature(Data, HashFunction, Signature, Fingerprints, CertElements) ->
 
 -spec signature_props(atom() | string()) -> {HashFunction :: atom(), DigestMethodUrl :: string(), SignatureMethodUrl :: string()}.
 signature_props("http://www.w3.org/2000/09/xmldsig#rsa-sha1") ->
-    signature_props(rsa_sha1);
-signature_props(rsa_sha1) ->
-    HashFunction = sha,
+    signature_props(sha);
+signature_props(HashFunction = sha) ->
     DigestMethod = "http://www.w3.org/2000/09/xmldsig#sha1",
     Url = "http://www.w3.org/2000/09/xmldsig#rsa-sha1",
     {HashFunction, DigestMethod, Url};
 signature_props("http://www.w3.org/2001/04/xmldsig-more#rsa-sha256") ->
-    signature_props(rsa_sha256);
-signature_props(rsa_sha256) ->
-    HashFunction = sha256,
+    signature_props(sha256);
+signature_props(HashFunction = sha256) ->
     DigestMethod = "http://www.w3.org/2001/04/xmlenc#sha256",
     Url = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
     {HashFunction, DigestMethod, Url}.
@@ -457,7 +453,7 @@ sign_and_verify_multiple_signing_certs_test() ->
 
 sign_and_verify_multiple_signing_certs_test_base(Key, CertBin, AllCerts) ->
     {Doc, _} = xmerl_scan:string("<x:foo id=\"test\" xmlns:x=\"urn:foo:x:\"><x:name>blah</x:name></x:foo>", [{namespace_conformant, true}]),
-    SignedXml = sign(Doc, Key, AllCerts),
+    SignedXml = sign(Doc, Key, CertBin, AllCerts),
     Doc = strip(SignedXml),
     false = (Doc =:= SignedXml),
     ok = verify(SignedXml, [crypto:hash(sha256, CertBin)]).
